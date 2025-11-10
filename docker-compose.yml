@@ -1,0 +1,110 @@
+
+
+services:
+  ore-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ore-analytics
+    volumes:
+      # Mount local directories for input/output
+      - ./ore_input:/app/ore_input
+      - ./ore_output:/app/ore_output
+      - ./data:/app/data
+      # Mount the Python app for development (comment out for production)
+      - ./ore_app.py:/app/ore_app.py
+    environment:
+      # Application settings
+      - ORE_EXECUTABLE=/usr/local/bin/ore
+      - INPUT_DIR=/app/ore_input
+      - OUTPUT_DIR=/app/ore_output
+      - LOG_LEVEL=INFO
+      # Optional: Set timezone
+      - TZ=UTC
+    ports:
+      # Optional: If you add a web interface
+      - "8000:8000"
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    # Restart policy
+    restart: unless-stopped
+    # Health check (optional)
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import pandas; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Network
+    networks:
+      - ore-network
+
+  # Optional: Add Jupyter notebook for interactive analysis
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ore-jupyter
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+    volumes:
+      - ./ore_input:/app/ore_input
+      - ./ore_output:/app/ore_output
+      - ./data:/app/data
+      - ./notebooks:/app/notebooks
+      - ./ore_app.py:/app/ore_app.py
+    environment:
+      - ORE_EXECUTABLE=/usr/local/bin/ore
+      - JUPYTER_ENABLE_LAB=yes
+    ports:
+      - "8888:8888"
+    networks:
+      - ore-network
+    profiles:
+      - jupyter  # Only start when explicitly requested
+
+  # Optional: PostgreSQL for storing results
+  postgres:
+    image: postgres:15-alpine
+    container_name: ore-postgres
+    environment:
+      - POSTGRES_DB=ore_results
+      - POSTGRES_USER=ore_user
+      - POSTGRES_PASSWORD=ore_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - ore-network
+    profiles:
+      - database  # Only start when explicitly requested
+
+  # Optional: Redis for caching market data
+  redis:
+    image: redis:7-alpine
+    container_name: ore-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ore-network
+    profiles:
+      - cache  # Only start when explicitly requested
+
+networks:
+  ore-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
